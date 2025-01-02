@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTDs/PropertyList-1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadType</key>
+            <string>com.apple.desktop</string>
+            <key>override-picture-path</key>
+            <string>/Users/$(whoami)/Downloads/WALLPAPER_FILENAME</string> <!-- Update path and filename -->
+            <key>PayloadUUID</key>
+            <string>YOUR_UUID_HERE</string> <!-- Replace with a generated UUID -->
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>PayloadDisplayName</key>
+            <string>Set Desktop Wallpaper</string>
+        </dict>
+    </array>
+    <key>PayloadIdentifier</key>
+    <string>com.yourcompany.wallpaper</string> <!-- Change "yourcompany" to your organization name -->
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>YOUR_UUID_HERE</string> <!-- Replace with a generated UUID -->
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+    <key>PayloadDisplayName</key>
+    <string>Wallpaper Configuration Profile</string>
+</dict>
+</plist>

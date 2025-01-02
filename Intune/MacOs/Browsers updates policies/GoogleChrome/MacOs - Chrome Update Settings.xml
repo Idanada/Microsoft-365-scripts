@@ -1,0 +1,12 @@
+<key>UpdateDefault</key>
+<integer>0</integer>
+<key>DownloadPreference</key>
+<string>cacheable</string>
+<key>UpdatesSuppressedStartHour</key>
+<integer>18</integer>
+<key>UpdatesSuppressedStartMin</key>
+<integer>0</integer>
+<key>UpdatesSuppressedDurationMin</key>
+<integer>840</integer>
+<key>TargetVersionPrefix</key>
+<string>90.</string>
