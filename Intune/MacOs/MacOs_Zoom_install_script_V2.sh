@@ -4,6 +4,7 @@
 #########################################################
 ##                                                     ##
 ## Script to install or update the latest Zoom client  ##
+##    Supporting both Intel and Apple Silicon Macs     ##
 ##                                                     ##
 #########################################################
 
@@ -16,54 +17,70 @@
 ## loss) arising out of the use of or inability to use the sample script or documentation, even if Idan has been advised of the possibility
 ## of such damages.
 
+##############################################
+##            User-Defined Variables        ##
+##############################################
 
-# User Defined variables
-weburl="https://zoom.us/client/latest/ZoomInstallerIT.pkg"
+## If you prefer a single Universal installer for both Intel & Apple Silicon, 
+## just set the same URL in both variables below.
+weburlIntel="https://zoom.us/client/latest/ZoomInstallerIT.pkg"       # Intel/Universal package 
+weburlAppleSilicon="https://zoom.us/client/latest/Zoom.pkg"          # Apple Silicon package
+
 appname="Zoom"
 app="/Applications/zoom.us.app"
 logandmetadir="/Library/Logs/Microsoft/IntuneScripts/installZoom"
-processpath="/Applications/zoom.us.app/Contents/MacOS/zoom.us"
 metafile="$logandmetadir/$appname.meta"
-terminateprocess="false"
-autoUpdate="false"
 
-# Generated variables
+terminateprocess="false"     # not currently used
+autoUpdate="false"           # not currently used
+
+##############################################
+##           Generated Variables            ##
+##############################################
 tempdir=$(mktemp -d)
 log="$logandmetadir/$appname.log"
 
-# Function to initiate logging
+##############################################
+##         Function: startLog               ##
+##############################################
 startLog() {
-
     ################################################################
-    ##                                                            ##				
     ##  Function to start logging - Output to log file and STDOUT ##
-    ##                                                            ##
     ################################################################
-    
+
     if [[ ! -d "$logandmetadir" ]]; then
         echo "$(date) | Creating [$logandmetadir] to store logs"
-        mkdir -p "$logandmetadir" || { echo "Failed to create log directory, exiting"; exit 1; }
+        mkdir -p "$logandmetadir" || {
+            echo "Failed to create log directory, exiting"
+            exit 1
+        }
     fi
 
     exec &> >(tee -a "$log")
+    echo "$(date) | Starting script [$0]"
+    echo "$(date) | Running as user: $(whoami)"
 }
 
-# Function to check for and install Rosetta 2 if necessary
+##############################################
+##       Function: checkForRosetta2         ##
+##############################################
 checkForRosetta2() {
+    ######################################################
+    ##  Installs Rosetta 2 if needed on Apple Silicon   ##
+    ######################################################
 
-    ######################################################
-    ##                                                  ##
-    ##  Simple function to install Rosetta 2 if needed. ##
-    ##                                                  ##
-    ######################################################
-    
     echo "$(date) | Checking if we need Rosetta 2"
     processor=$(/usr/sbin/sysctl -n machdep.cpu.brand_string | grep -o "Intel")
-    
+
+    # If no "Intel" in processor string, we are on Apple Silicon.
     if [[ -z "$processor" ]]; then
+        # Check if rosetta is installed by seeing if 'oahd' process exists
         if ! /usr/bin/pgrep oahd >/dev/null 2>&1; then
             echo "$(date) | Installing Rosetta 2"
-            /usr/sbin/softwareupdate --install-rosetta --agree-to-license || { echo "Failed to install Rosetta 2, exiting"; exit 1; }
+            /usr/sbin/softwareupdate --install-rosetta --agree-to-license || {
+                echo "$(date) | Failed to install Rosetta 2, exiting"
+                exit 1
+            }
         else
             echo "$(date) | Rosetta 2 already installed"
         fi
@@ -72,23 +89,39 @@ checkForRosetta2() {
     fi
 }
 
-# Function to wait for a process to finish
-waitForProcess() {
+##############################################
+##     Function: selectZoomInstaller        ##
+##############################################
+selectZoomInstaller() {
+    ################################################################
+    ##  Selects the correct Zoom installer URL based on CPU type  ##
+    ################################################################
 
+    local cpuBrand
+    cpuBrand=$(/usr/sbin/sysctl -n machdep.cpu.brand_string)
+
+    if [[ "$cpuBrand" =~ "Intel" ]]; then
+        echo "$weburlIntel"
+    else
+        # Apple Silicon
+        echo "$weburlAppleSilicon"
+    fi
+}
+
+##############################################
+##      Function: waitForProcess            ##
+##############################################
+waitForProcess() {
     ############################################################
-    ##                                                        ##
-    ##  Function to wait for the specified process to finish  ##
-    ##                                                        ##
-    ##  Arguments:                                            ##
-    ##      $1 = process name to check                        ##
-    ##      $2 = delay time (optional, default is 30 seconds) ##
-    ##                                                        ##
+    ##  Wait for the specified process to finish              ##
+    ##  $1 = process name                                     ##
+    ##  $2 = delay time (optional, default 30 seconds)        ##
     ############################################################
 
     local processName="$1"
     local delay=${2:-30}
 
-    echo "$(date) | Waiting for process [$processName] to end"
+    echo "$(date) | Waiting for process [$processName] to end..."
 
     while pgrep "$processName" >/dev/null; do
         echo "$(date) | Process [$processName] is running, waiting [$delay] seconds"
@@ -98,51 +131,66 @@ waitForProcess() {
     echo "$(date) | Process [$processName] is not running, proceeding"
 }
 
-# Function to download the app
+##############################################
+##     Function: downloadApp                ##
+##############################################
 downloadApp() {
+    ###################################################################
+    ##  Download the Zoom installer from the URL determined by CPU   ##
+    ###################################################################
 
-    ############################################################
-    ##                                                        ##
-    ##  Function to download the Zoom installer from the web  ##
-    ##                                                        ##
-    ############################################################
-    
-    echo "$(date) | Starting download of [$appname]"
-    
-    curl -f -s --connect-timeout 30 --retry 5 --retry-delay 60 -L -J -O "$weburl" || {
-        echo "$(date) | Failed to download [$weburl], exiting"
+    local zoomURL="$1"
+    echo "$(date) | Starting download of [$appname] from [$zoomURL]"
+
+    # Navigate to our temp directory
+    pushd "$tempdir" || {
+        echo "$(date) | Failed to enter temp directory [$tempdir], exiting."
         exit 1
     }
-    
-    tempSearchPath="$tempdir/*"
-    for f in $tempSearchPath; do
-        tempfile=$f
+
+    # Download the package
+    curl -f -s --connect-timeout 30 --retry 5 --retry-delay 60 -L -J -O "$zoomURL" || {
+        echo "$(date) | Failed to download [$zoomURL], exiting"
+        popd
+        exit 1
+    }
+
+    local pkgFile
+    for f in "$tempdir"/*; do
+        pkgFile="$f"
     done
 
-    if [[ -z "$tempfile" ]]; then
-        echo "$(date) | Download failed or file not found"
+    if [[ -z "$pkgFile" ]]; then
+        echo "$(date) | Download failed or file not found in [$tempdir]"
+        popd
         exit 1
     else
-        echo "$(date) | Successfully downloaded file [$tempfile]"
+        echo "$(date) | Successfully downloaded file [$pkgFile]"
     fi
+
+    popd
+    echo "$pkgFile"
 }
 
-# Function to check if update is needed based on Last-Modified header
+##############################################
+##     Function: checkForUpdate             ##
+##############################################
 checkForUpdate() {
-
     ##################################################################################################################
-    ##                                                                                                              ##
-    ##  Function to check if the app needs an update by comparing the Last-Modified header from the web to the last ##
-    ##  saved date.                                                                                                 ##
-    ##                                                                                                              ##
+    ##  Checks if the app needs an update by comparing the Last-Modified header from the server to what was stored  ##
+    ##  locally in $metafile. If it matches, no update is needed; otherwise, we save the new date and proceed.       ##
     ##################################################################################################################
-    
-    echo "$(date) | Checking if update is needed"
 
-    lastModified=$(curl -sIL "$weburl" | grep -i "last-modified" | awk '{$1=""; print $0}' | tr -d '\r')
+    local zoomURL="$1"
+    echo "$(date) | Checking if update is needed from [$zoomURL]"
+
+    local lastModified
+    lastModified=$(curl -sIL "$zoomURL" | grep -i "last-modified" | awk '{$1=""; print $0}' | tr -d '\r')
 
     if [[ -f "$metafile" ]]; then
+        local previousLastModified
         previousLastModified=$(cat "$metafile")
+
         if [[ "$previousLastModified" == "$lastModified" ]]; then
             echo "$(date) | No update needed. Zoom is up to date."
             exit 0
@@ -156,43 +204,74 @@ checkForUpdate() {
     fi
 }
 
-# Function to check if the app is already installed
+##############################################
+##    Function: checkIfInstalled            ##
+##############################################
 checkIfInstalled() {
+    ###################################################################
+    ## Checks if the application is already installed. If it exists, ##
+    ## we check for updates; if not, we proceed with installation.    ##
+    ###################################################################
 
-    ###################################################################
-    ##                                                               ##
-    ##  This function checks if the application is already installed ##
-    ##                                                               ##					
-    ###################################################################
-    
+    local zoomURL="$1"
+
     if [[ -d "$app" ]]; then
         echo "$(date) | [$appname] is already installed, checking for updates..."
-        checkForUpdate
+        checkForUpdate "$zoomURL"
     else
-        echo "$(date) | [$appname] is not installed, proceeding with installation"
+        echo "$(date) | [$appname] is not installed, proceeding with installation."
     fi
 }
 
-# Clean up temp files and logs older than 7 days
-cleanOldLogs() {
+##############################################
+##     Function: installApp                 ##
+##############################################
+installApp() {
+    ################################################################
+    ##  Installs the pkg file that was downloaded                ##
+    ################################################################
 
-    ###########################################################
-    ##                                                       ##
-    ##  Function to clean up temp files and old log entries  ##
-    ##                                                       ##
-    ###########################################################
-    
-    find "$logandmetadir" -type f -mtime +7 -exec rm {} \;
-    echo "$(date) | Cleaned up old logs"
+    local pkgFile="$1"
+
+    echo "$(date) | Installing [$appname] from package [$pkgFile]"
+    /usr/sbin/installer -pkg "$pkgFile" -target / || {
+        echo "$(date) | Installation of [$appname] failed"
+        exit 1
+    }
+
+    echo "$(date) | [$appname] installed successfully"
 }
 
-# Main script
-startLog
-checkForRosetta2
-checkIfInstalled
-waitForProcess "/usr/sbin/softwareupdate"
-downloadApp
-cleanOldLogs
+##############################################
+##     Function: cleanOldLogs               ##
+##############################################
+cleanOldLogs() {
+    ###########################################################
+    ##  Cleans up temp files and old logs (older than 7 days) ##
+    ###########################################################
+    
+    find "$logandmetadir" -type f -mtime +7 -exec rm {} \; 2>/dev/null
+    echo "$(date) | Cleaned up old logs in [$logandmetadir]"
+}
 
-# End with a success code for Intune
+#########################################################
+##                    Main Script                      ##
+#########################################################
+
+startLog            # Start logging
+checkForRosetta2    # Check if we need Rosetta 2 on Apple Silicon
+
+# Determine correct Zoom URL based on CPU type
+zoomURL=$(selectZoomInstaller)
+echo "$(date) | Selected Zoom URL: [$zoomURL]"
+
+checkIfInstalled "$zoomURL"           # Check if Zoom is already installed (and if up to date)
+waitForProcess "/usr/sbin/softwareupdate"  # Wait if "softwareupdate" is running
+
+pkgPath=$(downloadApp "$zoomURL")     # Download the package, store the path returned
+cleanOldLogs                          # Clean logs older than 7 days
+
+installApp "$pkgPath"                 # Install Zoom from the downloaded pkg
+
+# If we reach here, everything should be successful
 exit 0
